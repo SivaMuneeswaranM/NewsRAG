@@ -1,36 +1,24 @@
-// backend/src/server.js
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient as createRedisClient } from 'redis';
-import { retrieve } from './rag.js'; // <-- make sure rag.js exports: export async function retrieve(q, topK) { ... }
+import { retrieve } from './rag.js';
 
-////////////////////////////////////////////////////////////////////////////////
-// Config
-////////////////////////////////////////////////////////////////////////////////
+
 const PORT         = parseInt(process.env.PORT || '4000', 10);
 const TOP_K        = parseInt(process.env.TOP_K_DEFAULT || '5', 10);
 const GEMINI_KEY   = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const USE_REDIS    = !!process.env.REDIS_URL;
 
-////////////////////////////////////////////////////////////////////////////////
-// App
-////////////////////////////////////////////////////////////////////////////////
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-////////////////////////////////////////////////////////////////////////////////
-// Gemini (optional)
-////////////////////////////////////////////////////////////////////////////////
 const genAI = GEMINI_KEY ? new GoogleGenerativeAI(GEMINI_KEY) : null;
 
-////////////////////////////////////////////////////////////////////////////////
-/** Utilities */
-////////////////////////////////////////////////////////////////////////////////
 const CLEAN_MAX = 1700;
 
 function clean(s, max = CLEAN_MAX) {
@@ -76,9 +64,7 @@ function pickSources(uniqueHits, k = 3) {
   }));
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Session store (Redis if available, otherwise in-memory)
-////////////////////////////////////////////////////////////////////////////////
+
 const memoryStore = new Map(); // sessionId -> { messages: [...] }
 
 let redis = null;
@@ -124,9 +110,7 @@ async function clearHistory(sessionId) {
   memoryStore.delete(sessionId);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Routes: health + debug
-////////////////////////////////////////////////////////////////////////////////
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.get('/debug', async (_req, res) => {
@@ -141,9 +125,7 @@ app.get('/debug', async (_req, res) => {
   });
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// Routes: sessions + history
-////////////////////////////////////////////////////////////////////////////////
+
 app.post('/session', async (_req, res) => {
   const sessionId = randomUUID();
   await setHistory(sessionId, []);
@@ -160,9 +142,7 @@ app.post('/session/:id/clear', async (req, res) => {
   res.json({ ok: true });
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// Route: chat
-////////////////////////////////////////////////////////////////////////////////
+
 app.post('/session/:id/chat', async (req, res) => {
   try {
     const sessionId = req.params.id;
@@ -188,7 +168,7 @@ app.post('/session/:id/chat', async (req, res) => {
       return res.json({ answer, sources: [] });
     }
 
-    // 2) build compact context (limit total size)
+    
     const blocks = [];
     let total = 0;
     for (const h of hits) {
@@ -200,7 +180,7 @@ app.post('/session/:id/chat', async (req, res) => {
     const context = blocks.join('\n\n');
     const sources = pickSources(hits, 3);
 
-    // 3) LLM or fallback
+    
     let answer;
     if (!genAI) {
       // fallback: a short readable summary with sources (not raw “Top passages”)
@@ -242,9 +222,6 @@ ${context}
   }
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// Start
-////////////////////////////////////////////////////////////////////////////////
 app.listen(PORT, () => {
   console.log(`API on http://localhost:${PORT}`);
 });
